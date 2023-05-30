@@ -41,10 +41,13 @@ parser.add_argument('-o', '--output', help='save output to this file', dest='out
 parser.add_argument('--keep-fps', help='maintain original fps', dest='keep_fps', action='store_true', default=False)
 parser.add_argument('--gpu', help='use gpu', dest='gpu', action='store_true', default=False)
 parser.add_argument('--keep-frames', help='keep frames directory', dest='keep_frames', action='store_true', default=False)
+parser.add_argument('--cores', help='number of cores to use', dest='cores_count', type=int)
 
 for name, value in vars(parser.parse_args()).items():
     args[name] = value
 
+if not args['cores_count']:
+    args['cores_count'] = psutil.cpu_count()-1
 
 sep = "/"
 if os.name == "nt":
@@ -60,7 +63,7 @@ def start_processing():
         print(f"Processing time: {end_time - start_time:.2f} seconds", flush=True)
         return
     frame_paths = args["frame_paths"]
-    n = len(frame_paths)//(psutil.cpu_count()-1)
+    n = len(frame_paths)//(args['cores_count'])
     processes = []
     for i in range(0, len(frame_paths), n):
         p = pool.apply_async(process_video, args=(args['source_img'], frame_paths[i:i+n],))
@@ -123,16 +126,19 @@ def toggle_keep_frames():
 
 
 def save_file():
-    args['output_file'] = asksaveasfilename(initialfile='output.mp4', defaultextension=".mp4", filetypes=[("All Files","*.*"),("Videos","*.mp4")])
+    filename, ext = 'output.mp4', '.mp4'
+    if is_img(args['target_path']):
+        filename, ext = 'output.png', '.png'
+    args['output_file'] = asksaveasfilename(initialfile=filename, defaultextension=ext, filetypes=[("All Files","*.*"),("Videos","*.mp4")])
 
 
 def status(string):
-    if args['source_img']:
+    if 'cli_mode' in args:
         print("Status: " + string)
     else:
         status_label["text"] = "Status: " + string
         window.update()
-        
+
 
 def start():
     print("DON'T WORRY. IT'S NOT STUCK/CRASHED.\n" * 5)
@@ -142,15 +148,17 @@ def start():
     elif not args['target_path'] or not os.path.isfile(args['target_path']):
         print("\n[WARNING] Please select a video/image to swap face in.")
         return
+    if not args['output_file']:
+        args['output_file'] = rreplace(args['target_path'], "/", "/swapped-", 1) if "/" in target_path else "swapped-"+target_path
     global pool
-    pool = mp.Pool(psutil.cpu_count()-1)
+    pool = mp.Pool(args['cores_count'])
     target_path = args['target_path']
     test_face = get_face(cv2.imread(args['source_img']))
     if not test_face:
         print("\n[WARNING] No face detected in source image. Please try with another one.\n")
         return
     if is_img(target_path):
-        process_img(args['source_img'], target_path)
+        process_img(args['source_img'], target_path, args['output_file'])
         status("swap successful!")
         return
     video_name = target_path.split("/")[-1].split(".")[0]
@@ -184,6 +192,7 @@ def start():
 if __name__ == "__main__":
     global status_label, window
     if args['source_img']:
+        args['cli_mode'] = True
         start()
         quit()
     window = tk.Tk()
